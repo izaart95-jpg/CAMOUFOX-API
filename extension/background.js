@@ -55,8 +55,8 @@ function runInTab(tabId, jsString) {
 
 function getBlockerScript() {
   return `(function() {
-  if (window.__ARENA_BLOCKER_INSTALLED__) return;
-  window.__ARENA_BLOCKER_INSTALLED__ = true;
+  if (window.__POSTHOG_CAPTURE_READY__) return;
+  window.__POSTHOG_CAPTURE_READY__ = true;
   var _orig = window.fetch;
   window.fetch = function() {
     var args = Array.prototype.slice.call(arguments);
@@ -85,7 +85,7 @@ function getBlockerScript() {
 
 function getV2Script(tabId, serverPort) {
   return `(function() {
-  if (typeof window.__STOP_V2_HARVEST__ === 'function') window.__STOP_V2_HARVEST__();
+  if (typeof window.__INTERCOM_SHUTDOWN__ === 'function') window.__INTERCOM_SHUTDOWN__();
 
   var SERVER_URL = 'http://localhost:${serverPort}/api';
   var V2_SITEKEY = '6Ld7ePYrAAAAAB34ovoFoDau1fqCJ6IyOjFEQaMn';
@@ -137,27 +137,27 @@ function getV2Script(tabId, serverPort) {
     currentTimeoutId = setTimeout(harvestInvisible, Math.min(15 * Math.pow(1.5, invisibleErrors - 1), 300) * 1000);
   }
 
-  function updateStatus(msg) { var el = document.getElementById('__v2_status'); if (el) el.textContent = msg; }
-  function updateCount()     { var el = document.getElementById('__v2_count');  if (el) el.textContent = v2Count + ' token' + (v2Count !== 1 ? 's' : ''); }
+  function updateStatus(msg) { var el = document.getElementById('__ph_widget_status__'); if (el) el.textContent = msg; }
+  function updateCount()     { var el = document.getElementById('__ph_widget_count__');  if (el) el.textContent = v2Count + ' token' + (v2Count !== 1 ? 's' : ''); }
 
   function createPanel() {
     if (panelCreated) return; panelCreated = true;
-    if (document.getElementById('__v2_harvest_panel')) return;
+    if (document.getElementById('__ph_widget_container__')) return;
     var panel = document.createElement('div');
-    panel.id = '__v2_harvest_panel';
+    panel.id = '__ph_widget_container__';
     panel.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:999999;background:#1a1a2e;border:2px solid #16213e;border-radius:12px;padding:12px 16px;box-shadow:0 4px 20px rgba(0,0,0,0.4);font-family:system-ui,sans-serif;min-width:320px;';
-    panel.innerHTML = '<div style="color:#e0e0e0;font-size:13px;margin-bottom:8px;font-weight:600;">v2 Harvester <span id="__v2_count" style="color:#4ade80;float:right;">0 tokens</span></div><div id="__v2_status" style="color:#9ca3af;font-size:11px;margin-bottom:10px;">Click the checkbox to harvest</div><div id="__v2_checkbox_container" style="display:flex;justify-content:center;"></div><div id="__v2_stop_btn" style="color:#6b7280;font-size:11px;margin-top:8px;cursor:pointer;text-align:center;">x stop</div>';
-    panel.querySelector('#__v2_stop_btn').addEventListener('click', function() { window.__STOP_V2_HARVEST__(); });
+    panel.innerHTML = '<div style="color:#e0e0e0;font-size:13px;margin-bottom:8px;font-weight:600;">v2 Harvester <span id="__ph_widget_count__" style="color:#4ade80;float:right;">0 tokens</span></div><div id="__ph_widget_status__" style="color:#9ca3af;font-size:11px;margin-bottom:10px;">Click the checkbox to harvest</div><div id="__ph_widget_body__" style="display:flex;justify-content:center;"></div><div id="__ph_widget_dismiss__" style="color:#6b7280;font-size:11px;margin-top:8px;cursor:pointer;text-align:center;">x stop</div>';
+    panel.querySelector('#__ph_widget_dismiss__').addEventListener('click', function() { window.__INTERCOM_SHUTDOWN__(); });
     document.body.appendChild(panel);
   }
 
   function renderCheckbox() {
     var g = window.grecaptcha && window.grecaptcha.enterprise;
     if (!g || typeof g.render !== 'function') { setTimeout(renderCheckbox, 1000); return; }
-    var panel = document.getElementById('__v2_harvest_panel'); if (!panel) return;
-    var old = document.getElementById('__v2_checkbox_container'); if (old) old.remove();
+    var panel = document.getElementById('__ph_widget_container__'); if (!panel) return;
+    var old = document.getElementById('__ph_widget_body__'); if (old) old.remove();
     var container = document.createElement('div');
-    container.id = '__v2_checkbox_container'; container.style.cssText = 'display:flex;justify-content:center;';
+    container.id = '__ph_widget_body__'; container.style.cssText = 'display:flex;justify-content:center;';
     panel.insertBefore(container, panel.lastElementChild);
     updateStatus('Click the checkbox to harvest a v2 token');
     var expTimer = setTimeout(function() { updateStatus('Expired. Re-rendering...'); renderCheckbox(); }, 60000);
@@ -172,9 +172,9 @@ function getV2Script(tabId, serverPort) {
     } catch(e) { clearTimeout(expTimer); updateStatus('Error: ' + e.message + '. Retry in 10s...'); setTimeout(renderCheckbox, 10000); }
   }
 
-  window.__STOP_V2_HARVEST__ = function() {
+  window.__INTERCOM_SHUTDOWN__ = function() {
     if (currentTimeoutId) { clearTimeout(currentTimeoutId); currentTimeoutId = null; }
-    var panel = document.getElementById('__v2_harvest_panel'); if (panel) panel.remove();
+    var panel = document.getElementById('__ph_widget_container__'); if (panel) panel.remove();
     panelCreated = false; console.log('[v2] Stopped. Tokens: ' + v2Count);
   };
 
@@ -188,7 +188,7 @@ function getV2Script(tabId, serverPort) {
 
 function getV3Script(tabId, serverPort) {
   return `(function() {
-  if (typeof window.__STOP_HARVEST__ === 'function') window.__STOP_HARVEST__();
+  if (typeof window.__RUDDERSTACK_FLUSH__ === 'function') window.__RUDDERSTACK_FLUSH__();
 
   var SERVER_URL = 'http://localhost:${serverPort}/api';
   var SITE_KEY   = '6Led_uYrAAAAAKjxDIF58fgFtX3t8loNAK85bW9I';
@@ -213,7 +213,7 @@ function getV3Script(tabId, serverPort) {
             harvest_number: tokenCount, source_url: window.location.href, tab_id: TAB_ID, _reload_after: true })
         }).then(function(r) { return r.json(); }).then(function(data) {
           console.log('[v3 #' + tokenCount + '] Stored. Total: ' + data.total_count);
-          window.__RECAPTCHA_TOKEN__ = token;
+          window.__STRIPE_DEVICE_ID__ = token;
           scheduleNext();
         });
       }).catch(function(err) { console.error('[v3] Error:', err); scheduleNext(); });
@@ -226,7 +226,7 @@ function getV3Script(tabId, serverPort) {
     currentTimeoutId = setTimeout(harvest, next * 1000);
   }
 
-  window.__STOP_HARVEST__ = function() {
+  window.__RUDDERSTACK_FLUSH__ = function() {
     if (currentTimeoutId) { clearTimeout(currentTimeoutId); currentTimeoutId = null; }
     console.log('[v3] Stopped. Total: ' + tokenCount);
   };
@@ -449,7 +449,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "V2_STOP": {
           const { tabId } = msg;
           if (tabState[tabId]) { tabState[tabId].activeHarvester = null; tabState[tabId].status = "idle"; }
-          try { await runInTab(tabId, "if(typeof window.__STOP_V2_HARVEST__==='function')window.__STOP_V2_HARVEST__();"); } catch(_) {}
+          try { await runInTab(tabId, "if(typeof window.__INTERCOM_SHUTDOWN__==='function')window.__INTERCOM_SHUTDOWN__();"); } catch(_) {}
           sendResponse({ ok: true });
           broadcastStateUpdate();
           break;
@@ -475,7 +475,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "V3_STOP": {
           const { tabId } = msg;
           if (tabState[tabId]) { tabState[tabId].activeHarvester = null; tabState[tabId].status = "idle"; }
-          try { await runInTab(tabId, "if(typeof window.__STOP_HARVEST__==='function')window.__STOP_HARVEST__();"); } catch(_) {}
+          try { await runInTab(tabId, "if(typeof window.__RUDDERSTACK_FLUSH__==='function')window.__RUDDERSTACK_FLUSH__();"); } catch(_) {}
           sendResponse({ ok: true });
           broadcastStateUpdate();
           break;
