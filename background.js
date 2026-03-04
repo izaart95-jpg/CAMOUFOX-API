@@ -146,7 +146,8 @@ function getV2Script(tabId, serverPort) {
     var panel = document.createElement('div');
     panel.id = '__v2_harvest_panel';
     panel.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:999999;background:#1a1a2e;border:2px solid #16213e;border-radius:12px;padding:12px 16px;box-shadow:0 4px 20px rgba(0,0,0,0.4);font-family:system-ui,sans-serif;min-width:320px;';
-    panel.innerHTML = '<div style="color:#e0e0e0;font-size:13px;margin-bottom:8px;font-weight:600;">v2 Harvester <span id="__v2_count" style="color:#4ade80;float:right;">0 tokens</span></div><div id="__v2_status" style="color:#9ca3af;font-size:11px;margin-bottom:10px;">Click the checkbox to harvest</div><div id="__v2_checkbox_container" style="display:flex;justify-content:center;"></div><div style="color:#6b7280;font-size:11px;margin-top:8px;cursor:pointer;text-align:center;" onclick="window.__STOP_V2_HARVEST__()">x stop</div>';
+    panel.innerHTML = '<div style="color:#e0e0e0;font-size:13px;margin-bottom:8px;font-weight:600;">v2 Harvester <span id="__v2_count" style="color:#4ade80;float:right;">0 tokens</span></div><div id="__v2_status" style="color:#9ca3af;font-size:11px;margin-bottom:10px;">Click the checkbox to harvest</div><div id="__v2_checkbox_container" style="display:flex;justify-content:center;"></div><div id="__v2_stop_btn" style="color:#6b7280;font-size:11px;margin-top:8px;cursor:pointer;text-align:center;">x stop</div>';
+    panel.querySelector('#__v2_stop_btn').addEventListener('click', function() { window.__STOP_V2_HARVEST__(); });
     document.body.appendChild(panel);
   }
 
