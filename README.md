@@ -1,4 +1,5 @@
 # Arena reCAPTCHA Harvester — Extension
+## Can be tuned easily for any website with recaptcha v3 and v2
 
 ## Architecture
 
