@@ -1,14 +1,18 @@
 /**
  * popup.js — all event wiring via addEventListener (no inline handlers)
+ *
+ * Fix: config panel values are NOT overwritten during auto-refresh when
+ * the settings panel is open and the user is actively editing.
  */
 
 let _config = {};
 let _toastTimer = null;
+let _configPanelOpen = false;    // track panel open state
+let _configDirty    = false;     // true if user has touched any field since last save
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Static buttons
   document.getElementById("config-toggle").addEventListener("click", toggleConfig);
   document.getElementById("btn-save-config").addEventListener("click", saveConfig);
   document.getElementById("btn-refresh").addEventListener("click", refresh);
@@ -19,6 +23,10 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     chrome.tabs.create({ url: "https://arena.ai" });
   });
+
+  // Mark config dirty when user interacts with any config input
+  document.getElementById("config-panel").addEventListener("input",  () => { _configDirty = true; });
+  document.getElementById("config-panel").addEventListener("change", () => { _configDirty = true; });
 
   // Real-time push from background
   chrome.runtime.onMessage.addListener(msg => {
@@ -38,14 +46,12 @@ async function refresh() {
 
     _config = state.config || {};
 
-    // Config panel values
-    document.getElementById("cfg-port").value           = _config.SERVER_PORT || 5000;
-    document.getElementById("cfg-tuning").checked       = !!_config.TUNING;
-    document.getElementById("cfg-hard-tuning").checked  = !!_config.HARD_TUNING;
-    document.getElementById("cfg-hard-tuning").disabled = !_config.TUNING;
-    document.getElementById("cfg-five-gain").checked    = !!_config.FIVE_GAIN;
-    document.getElementById("cfg-eval-id").value        = _config.EVAL_ID || "";
-    document.getElementById("eval-id-row").style.display = _config.FIVE_GAIN ? "block" : "none";
+    // Only update config panel values when:
+    //  - panel is closed, OR
+    //  - user has NOT started editing (not dirty)
+    if (!_configPanelOpen || !_configDirty) {
+      applyConfigToUI(_config);
+    }
 
     await fetchServerStats();
     renderTabs(state.tabs || []);
@@ -53,6 +59,26 @@ async function refresh() {
   } catch (e) {
     console.error("[popup] refresh error:", e);
   }
+}
+
+function applyConfigToUI(cfg) {
+  document.getElementById("cfg-port").value           = cfg.SERVER_PORT || 5000;
+  document.getElementById("cfg-tuning").checked       = !!cfg.TUNING;
+  document.getElementById("cfg-hard-tuning").checked  = !!cfg.HARD_TUNING;
+  document.getElementById("cfg-hard-tuning").disabled = !cfg.TUNING;
+  document.getElementById("cfg-five-gain").checked    = !!cfg.FIVE_GAIN;
+  document.getElementById("cfg-eval-id").value        = cfg.EVAL_ID || "";
+  document.getElementById("eval-id-row").style.display = cfg.FIVE_GAIN ? "block" : "none";
+
+  // V3 interval
+  document.getElementById("cfg-v3-min").value = cfg.V3_MIN_INTERVAL ?? 12;
+  document.getElementById("cfg-v3-max").value = cfg.V3_MAX_INTERVAL ?? 18;
+
+  // Hard-tuning cookie list
+  const cookies = Array.isArray(cfg.HARD_TUNING_COOKIES)
+    ? cfg.HARD_TUNING_COOKIES
+    : ["arena-auth-prod-v1.0", "arena-auth-prod-v1.1", "__cf_bm", "cf_clearance"];
+  document.getElementById("cfg-cookies").value = cookies.join("\n");
 }
 
 async function fetchServerStats() {
@@ -126,7 +152,6 @@ function renderTabs(tabs) {
     </div>`;
   }).join("");
 
-  // Wire up all tab buttons via delegation
   container.querySelectorAll("button[data-action]").forEach(btn => {
     btn.addEventListener("click", onTabButton);
   });
@@ -158,8 +183,15 @@ async function onTabButton(e) {
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 function toggleConfig() {
-  document.getElementById("config-toggle").classList.toggle("open");
-  document.getElementById("config-panel").classList.toggle("open");
+  _configPanelOpen = !_configPanelOpen;
+  document.getElementById("config-toggle").classList.toggle("open", _configPanelOpen);
+  document.getElementById("config-panel").classList.toggle("open", _configPanelOpen);
+
+  // When opening, always sync fresh values and reset dirty flag
+  if (_configPanelOpen) {
+    applyConfigToUI(_config);
+    _configDirty = false;
+  }
 }
 
 function onTuningChange() {
@@ -178,18 +210,38 @@ async function saveConfig() {
   const errEl = document.getElementById("cfg-error");
   errEl.style.display = "none";
 
+  // Parse cookie list (one per line, trim blanks)
+  const rawCookies = document.getElementById("cfg-cookies").value;
+  const cookieList = rawCookies
+    .split("\n")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (cookieList.length === 0) {
+    errEl.textContent   = "HARD TUNING: enter at least one cookie name.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  const v3Min = parseFloat(document.getElementById("cfg-v3-min").value);
+  const v3Max = parseFloat(document.getElementById("cfg-v3-max").value);
+
   const cfg = {
-    SERVER_PORT: parseInt(document.getElementById("cfg-port").value, 10) || 5000,
-    TUNING:      document.getElementById("cfg-tuning").checked,
-    HARD_TUNING: document.getElementById("cfg-hard-tuning").checked,
-    FIVE_GAIN:   document.getElementById("cfg-five-gain").checked,
-    EVAL_ID:     document.getElementById("cfg-eval-id").value.trim(),
+    SERVER_PORT:         parseInt(document.getElementById("cfg-port").value, 10) || 5000,
+    TUNING:              document.getElementById("cfg-tuning").checked,
+    HARD_TUNING:         document.getElementById("cfg-hard-tuning").checked,
+    FIVE_GAIN:           document.getElementById("cfg-five-gain").checked,
+    EVAL_ID:             document.getElementById("cfg-eval-id").value.trim(),
+    V3_MIN_INTERVAL:     v3Min,
+    V3_MAX_INTERVAL:     v3Max,
+    HARD_TUNING_COOKIES: cookieList,
   };
 
   const r = await sendMsg({ type: "SAVE_CONFIG", config: cfg });
   if (r.ok) {
+    _config      = cfg;
+    _configDirty = false;   // reset dirty after successful save
     toast("Settings saved ✓", "#4ade80");
-    _config = cfg;
   } else {
     errEl.textContent   = r.error || "Save failed";
     errEl.style.display = "block";
@@ -212,7 +264,7 @@ async function clearTokens() {
   }
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function sendMsg(msg) {
   return new Promise((resolve, reject) => {
@@ -225,7 +277,7 @@ function sendMsg(msg) {
 
 function toast(msg, color = "#e0e0e0") {
   const el = document.getElementById("toast");
-  el.textContent      = msg;
+  el.textContent       = msg;
   el.style.borderColor = color;
   el.style.color       = color;
   el.classList.add("show");

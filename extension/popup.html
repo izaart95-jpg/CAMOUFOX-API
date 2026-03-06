@@ -53,6 +53,12 @@
   .toggle-switch input:disabled + .toggle-slider { opacity: 0.4; cursor: not-allowed; }
   .cfg-input { background: #1a1a2e; border: 1px solid #374151; border-radius: 6px; color: #e0e0e0; font-size: 12px; padding: 4px 8px; width: 100%; margin-top: 4px; }
   .cfg-input:focus { outline: 1px solid #7c3aed; }
+  .cfg-textarea { background: #1a1a2e; border: 1px solid #374151; border-radius: 6px; color: #e0e0e0; font-size: 11px; padding: 6px 8px; width: 100%; margin-top: 4px; font-family: monospace; resize: vertical; min-height: 72px; }
+  .cfg-textarea:focus { outline: 1px solid #7c3aed; }
+  .cfg-section-divider { border: none; border-top: 1px solid #2a2a4e; margin: 12px 0; }
+  .cfg-section-label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+  .inline-pair { display: flex; gap: 8px; }
+  .inline-pair .cfg-input { width: auto; flex: 1; }
   .save-btn { width: 100%; padding: 7px; background: #7c3aed; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; margin-top: 6px; }
   .save-btn:hover { background: #6d28d9; }
   .footer { padding: 8px 14px; display: flex; justify-content: space-between; align-items: center; }
@@ -89,7 +95,12 @@
   ⚙ Settings
   <span class="arrow">▾</span>
 </div>
+
 <div class="config-panel" id="config-panel">
+
+  <!-- ── General ── -->
+  <div class="cfg-section-label">General</div>
+
   <div class="cfg-row">
     <div>
       <div class="cfg-label">Server Port</div>
@@ -97,23 +108,56 @@
     </div>
     <input class="cfg-input" id="cfg-port" type="number" min="1" max="65535" style="width:80px;margin:0;" value="5000">
   </div>
+
   <div class="cfg-row">
     <div><div class="cfg-label">TUNING</div><div class="cfg-sub">Reload tab after each token</div></div>
     <label class="toggle-switch"><input type="checkbox" id="cfg-tuning"><span class="toggle-slider"></span></label>
   </div>
+
   <div class="cfg-row">
     <div><div class="cfg-label">HARD TUNING</div><div class="cfg-sub">Wipe cookies (keep auth) + fresh reload</div></div>
     <label class="toggle-switch"><input type="checkbox" id="cfg-hard-tuning"><span class="toggle-slider"></span></label>
   </div>
+
   <div class="cfg-row">
     <div><div class="cfg-label">FIVE_GAIN</div><div class="cfg-sub">Navigate to arena.ai/c/&lt;eval_id&gt;</div></div>
     <label class="toggle-switch"><input type="checkbox" id="cfg-five-gain"><span class="toggle-slider"></span></label>
   </div>
+
   <div id="eval-id-row" style="display:none; margin-bottom:10px;">
     <div class="cfg-label">Eval / Conversation ID</div>
     <input class="cfg-input" id="cfg-eval-id" type="text" placeholder="e.g. abc123xyz">
   </div>
-  <div id="cfg-error" class="err" style="display:none;"></div>
+
+  <hr class="cfg-section-divider">
+
+  <!-- ── V3 Interval ── -->
+  <div class="cfg-section-label">V3 Harvest Interval (seconds)</div>
+
+  <div style="margin-bottom:10px;">
+    <div class="cfg-sub" style="margin-bottom:6px;">Random delay between v3 token requests. Min must be ≥ 1, max must be ≥ min.</div>
+    <div class="inline-pair">
+      <div style="flex:1;">
+        <div class="cfg-label" style="font-size:11px;margin-bottom:3px;">Min</div>
+        <input class="cfg-input" id="cfg-v3-min" type="number" min="1" step="0.5" value="12">
+      </div>
+      <div style="flex:1;">
+        <div class="cfg-label" style="font-size:11px;margin-bottom:3px;">Max</div>
+        <input class="cfg-input" id="cfg-v3-max" type="number" min="1" step="0.5" value="18">
+      </div>
+    </div>
+  </div>
+
+  <hr class="cfg-section-divider">
+
+  <!-- ── HARD TUNING cookie list ── -->
+  <div class="cfg-section-label">HARD TUNING — Cookies to Keep</div>
+  <div class="cfg-sub" style="margin-bottom:6px;">
+    One cookie name per line. These are saved before the wipe and restored after reload. All other arena.ai cookies are deleted.
+  </div>
+  <textarea class="cfg-textarea" id="cfg-cookies" placeholder="arena-auth-prod-v1.0&#10;arena-auth-prod-v1.1&#10;__cf_bm&#10;cf_clearance"></textarea>
+
+  <div id="cfg-error" class="err" style="display:none;margin-top:6px;"></div>
   <button class="save-btn" id="btn-save-config">Save Settings</button>
 </div>
 

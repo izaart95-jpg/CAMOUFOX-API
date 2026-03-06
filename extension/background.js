@@ -6,19 +6,20 @@
 // ─── Config defaults ──────────────────────────────────────────────────────────
 
 const DEFAULT_CONFIG = {
-  SERVER_PORT: 5000,
-  FIVE_GAIN:   false,
-  EVAL_ID:     "",
-  TUNING:      true,
-  HARD_TUNING: false,
+  SERVER_PORT:       5000,
+  FIVE_GAIN:         false,
+  EVAL_ID:           "",
+  TUNING:            true,
+  HARD_TUNING:       false,
+  V3_MIN_INTERVAL:   12,
+  V3_MAX_INTERVAL:   18,
+  HARD_TUNING_COOKIES: [
+    "arena-auth-prod-v1.0",
+    "arena-auth-prod-v1.1",
+    "__cf_bm",
+    "cf_clearance",
+  ],
 };
-
-const HARD_TUNING_KEEP = new Set([
-  "arena-auth-prod-v1.0",
-  "arena-auth-prod-v1.1",
-  "__cf_bm",
-  "cf_clearance",
-]);
 
 // Per-tab state: { status, activeHarvester, tokenCount }
 const tabState = {};
@@ -28,7 +29,12 @@ const tabState = {};
 function getConfig() {
   return new Promise(resolve => {
     chrome.storage.local.get("harvester_config", data => {
-      resolve(Object.assign({}, DEFAULT_CONFIG, data.harvester_config || {}));
+      const cfg = Object.assign({}, DEFAULT_CONFIG, data.harvester_config || {});
+      // Ensure HARD_TUNING_COOKIES is always an array
+      if (!Array.isArray(cfg.HARD_TUNING_COOKIES)) {
+        cfg.HARD_TUNING_COOKIES = DEFAULT_CONFIG.HARD_TUNING_COOKIES;
+      }
+      resolve(cfg);
     });
   });
 }
@@ -38,9 +44,6 @@ function saveConfig(cfg) {
 }
 
 // ─── Core injection helper ────────────────────────────────────────────────────
-// Injects a JS string into the MAIN world of a tab.
-// We use the (code => eval(code)) pattern to avoid MV3 function-serialization
-// issues where closures and referenced outer functions are lost.
 
 function runInTab(tabId, jsString) {
   return chrome.scripting.executeScript({
@@ -107,6 +110,10 @@ function getV2Script(tabId, serverPort) {
     }).then(function(r) { return r.json(); }).then(function(data) {
       console.log('[v2-' + mode + ' #' + v2Count + '] Stored. Total: ' + data.total_count);
       if (panelCreated) updateStatus('Token #' + v2Count + ' stored! Reloading...');
+      // Signal background to reload
+      if (typeof chrome !== 'undefined' && chrome.runtime) {
+        chrome.runtime.sendMessage({ type: 'TOKEN_HARVESTED', tabId: TAB_ID, version: 'v2' });
+      }
     }).catch(function(err) { console.error('[v2-' + mode + '] Store failed:', err); });
   }
 
@@ -186,7 +193,7 @@ function getV2Script(tabId, serverPort) {
 })();`;
 }
 
-function getV3Script(tabId, serverPort) {
+function getV3Script(tabId, serverPort, v3Min, v3Max) {
   return `(function() {
   if (typeof window.__RUDDERSTACK_FLUSH__ === 'function') window.__RUDDERSTACK_FLUSH__();
 
@@ -194,11 +201,13 @@ function getV3Script(tabId, serverPort) {
   var SITE_KEY   = '6Led_uYrAAAAAKjxDIF58fgFtX3t8loNAK85bW9I';
   var ACTION     = 'chat_submit';
   var TAB_ID     = ${tabId};
+  var V3_MIN     = ${v3Min};
+  var V3_MAX     = ${v3Max};
   var tokenCount = 0, currentTimeoutId = null;
 
   function randInterval() {
     var arr = new Uint32Array(1); crypto.getRandomValues(arr);
-    return 12 + (arr[0] / (0xFFFFFFFF + 1)) * 6;
+    return V3_MIN + (arr[0] / (0xFFFFFFFF + 1)) * (V3_MAX - V3_MIN);
   }
 
   function harvest() {
@@ -214,6 +223,10 @@ function getV3Script(tabId, serverPort) {
         }).then(function(r) { return r.json(); }).then(function(data) {
           console.log('[v3 #' + tokenCount + '] Stored. Total: ' + data.total_count);
           window.__STRIPE_DEVICE_ID__ = token;
+          // Signal background to reload if TUNING is enabled
+          if (typeof chrome !== 'undefined' && chrome.runtime) {
+            chrome.runtime.sendMessage({ type: 'TOKEN_HARVESTED', tabId: TAB_ID, version: 'v3' });
+          }
           scheduleNext();
         });
       }).catch(function(err) { console.error('[v3] Error:', err); scheduleNext(); });
@@ -231,7 +244,7 @@ function getV3Script(tabId, serverPort) {
     console.log('[v3] Stopped. Total: ' + tokenCount);
   };
 
-  console.log('[v3] Harvester starting');
+  console.log('[v3] Harvester starting (interval: ' + V3_MIN + '-' + V3_MAX + 's)');
   harvest();
 })();`;
 }
@@ -287,10 +300,11 @@ function getInvisibleScript(serverPort) {
 
 // ─── HARD_TUNING helpers ──────────────────────────────────────────────────────
 
-async function hardTuningCycleCookies() {
+async function hardTuningCycleCookies(keepCookies) {
+  const keepSet = new Set(keepCookies);
   try {
-    const all = await chrome.cookies.getAll({ domain: "arena.ai" });
-    const saved = all.filter(c => HARD_TUNING_KEEP.has(c.name));
+    const all   = await chrome.cookies.getAll({ domain: "arena.ai" });
+    const saved = all.filter(c => keepSet.has(c.name));
     console.log("[bg][HARD_TUNING] Saving:", saved.map(c => c.name).join(", ") || "none");
     for (const c of all) {
       const url = `http${c.secure ? "s" : ""}://${c.domain.replace(/^\./, "")}${c.path}`;
@@ -324,33 +338,54 @@ async function restoreCookies(saved) {
 async function reloadTabAfterToken(tabId, version) {
   const cfg   = await getConfig();
   const state = tabState[tabId];
+
+  if (!cfg.TUNING) {
+    console.log("[bg] TUNING disabled — skip reload");
+    return;
+  }
+
   if (!state || !state.activeHarvester) {
     console.log("[bg] Tab", tabId, "harvester stopped — skip reload");
     return;
   }
 
+  // Prevent double-reloads if already reloading
+  if (state.status === "reloading") {
+    console.log("[bg] Tab", tabId, "already reloading — skip");
+    return;
+  }
+
+  // Remember which harvester was active BEFORE reload
+  const harvesterType = state.activeHarvester;
+
   state.status = "reloading";
   broadcastStateUpdate();
 
   let savedCookies = [];
-  if (cfg.HARD_TUNING) savedCookies = await hardTuningCycleCookies();
+  if (cfg.HARD_TUNING) {
+    savedCookies = await hardTuningCycleCookies(cfg.HARD_TUNING_COOKIES);
+  }
 
   const targetUrl = (cfg.FIVE_GAIN && cfg.EVAL_ID)
     ? `https://arena.ai/c/${cfg.EVAL_ID}`
     : "https://arena.ai";
 
+  // One-shot navigation listener
   const onCompleted = (details) => {
     if (details.tabId !== tabId || details.frameId !== 0) return;
     chrome.webNavigation.onCompleted.removeListener(onCompleted);
 
     (async () => {
+      // Restore cookies first if HARD_TUNING
       if (cfg.HARD_TUNING && savedCookies.length > 0) {
         await restoreCookies(savedCookies);
         await new Promise(r => setTimeout(r, 400));
       }
 
+      // Always re-inject blocker
       try { await runInTab(tabId, getBlockerScript()); } catch(e) { console.warn("[bg] Blocker error:", e.message); }
 
+      // Check harvester is still meant to be active
       const s = tabState[tabId];
       if (!s || !s.activeHarvester) {
         if (s) s.status = "idle";
@@ -358,15 +393,22 @@ async function reloadTabAfterToken(tabId, version) {
         return;
       }
 
-      const harvType = s.activeHarvester;
+      // Re-inject the SAME harvester that was running before reload
       try {
-        const script = harvType === "v2" ? getV2Script(tabId, cfg.SERVER_PORT) : getV3Script(tabId, cfg.SERVER_PORT);
+        let script;
+        if (harvesterType === "v2") {
+          script = getV2Script(tabId, cfg.SERVER_PORT);
+          s.status = "harvesting_v2";
+        } else {
+          script = getV3Script(tabId, cfg.SERVER_PORT, cfg.V3_MIN_INTERVAL, cfg.V3_MAX_INTERVAL);
+          s.status = "harvesting_v3";
+        }
         await runInTab(tabId, script);
-        s.status = harvType === "v2" ? "harvesting_v2" : "harvesting_v3";
-        console.log("[bg] Tab", tabId, "✅", harvType, "re-injected after reload");
+        console.log("[bg] Tab", tabId, "✅", harvesterType, "re-injected after reload");
       } catch (e) {
         console.error("[bg] Re-inject error:", e.message);
         s.status = "idle";
+        s.activeHarvester = null;
       }
       broadcastStateUpdate();
     })();
@@ -382,8 +424,10 @@ async function reloadTabAfterToken(tabId, version) {
     }
   } catch (err) {
     console.error("[bg] Reload error:", err.message);
-    if (tabState[tabId]) tabState[tabId].status = "idle";
     chrome.webNavigation.onCompleted.removeListener(onCompleted);
+    if (tabState[tabId]) {
+      tabState[tabId].status = harvesterType === "v2" ? "harvesting_v2" : "harvesting_v3";
+    }
     broadcastStateUpdate();
   }
 }
@@ -404,6 +448,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       switch (msg.type) {
 
+        // ── New: harvester signals a token was stored → trigger TUNING reload ──
+        case "TOKEN_HARVESTED": {
+          const { tabId, version } = msg;
+          // Update token count
+          if (tabState[tabId]) {
+            tabState[tabId].tokenCount = (tabState[tabId].tokenCount || 0) + 1;
+          }
+          // Trigger reload if TUNING enabled
+          if (cfg.TUNING) {
+            reloadTabAfterToken(tabId, version);
+          }
+          sendResponse({ ok: true });
+          break;
+        }
+
         case "GET_STATE": {
           const tabs = await chrome.tabs.query({ url: "https://arena.ai/*" });
           sendResponse({
@@ -422,6 +481,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "SAVE_CONFIG": {
           if (msg.config.HARD_TUNING && !msg.config.TUNING) {
             sendResponse({ ok: false, error: "HARD_TUNING requires TUNING=true" });
+            break;
+          }
+          // Validate v3 intervals
+          const min = parseFloat(msg.config.V3_MIN_INTERVAL);
+          const max = parseFloat(msg.config.V3_MAX_INTERVAL);
+          if (isNaN(min) || isNaN(max) || min < 1 || max < min) {
+            sendResponse({ ok: false, error: "V3 interval: min must be ≥ 1 and max must be ≥ min" });
             break;
           }
           await saveConfig(Object.assign({}, cfg, msg.config));
@@ -460,7 +526,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (!tabState[tabId]) tabState[tabId] = { status: "idle", activeHarvester: null, tokenCount: 0 };
           try {
             await runInTab(tabId, getBlockerScript());
-            await runInTab(tabId, getV3Script(tabId, cfg.SERVER_PORT));
+            await runInTab(tabId, getV3Script(tabId, cfg.SERVER_PORT, cfg.V3_MIN_INTERVAL, cfg.V3_MAX_INTERVAL));
             tabState[tabId].activeHarvester = "v3";
             tabState[tabId].status = "harvesting_v3";
             sendResponse({ ok: true });
