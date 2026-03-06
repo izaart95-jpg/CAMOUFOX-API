@@ -1,7 +1,7 @@
 # Arena reCAPTCHA Harvester — Extension
 ## Can be tuned easily for any website with recaptcha v3 and v2
 ### Note v2 captcha isnt standalone supported and recommended use rektcaptcha extesnion along
-with this etension to get v2 tokens
+### with this etension to get v2 tokens
 ## Architecture
 
 ```
