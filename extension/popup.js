@@ -167,13 +167,14 @@ function renderTabs(tabs) {
         <span class="badge ${status}">${badgeText}</span>
       </div>
       <div class="btn-row">
-        <button class="btn v2-start" data-tab="${tid}" data-action="V2_START" ${dis}>V2 Start</button>
-        <button class="btn v2-stop"  data-tab="${tid}" data-action="V2_STOP"  ${dis}>V2 Stop</button>
-        <button class="btn v3-start" data-tab="${tid}" data-action="V3_START" ${dis}>V3 Start</button>
-        <button class="btn v3-stop"  data-tab="${tid}" data-action="V3_STOP"  ${dis}>V3 Stop</button>
+        <button class="btn v2-start"  data-tab="${tid}" data-action="V2_START"          ${dis}>V2 Invisible</button>
+        <button class="btn v2-cb"     data-tab="${tid}" data-action="V2_CHECKBOX_START"  ${dis}>V2 Checkbox</button>
+        <button class="btn v2-stop"   data-tab="${tid}" data-action="V2_STOP"            ${dis}>V2 Stop</button>
       </div>
       <div class="btn-row">
-        <button class="btn inv-run" data-tab="${tid}" data-action="INVISIBLE_RUN" ${dis}>🎯 Invisible Token</button>
+        <button class="btn v3-start" data-tab="${tid}" data-action="V3_START" ${dis}>V3 Start</button>
+        <button class="btn v3-stop"  data-tab="${tid}" data-action="V3_STOP"  ${dis}>V3 Stop</button>
+        <button class="btn inv-run"  data-tab="${tid}" data-action="INVISIBLE_RUN" ${dis}>🎯 On-demand</button>
       </div>
       <div class="tab-info">Session tokens: ${tab.tokenCount || 0}</div>
     </div>`;
@@ -190,11 +191,12 @@ async function onTabButton(e) {
   const action = btn.dataset.action;
 
   const toastMap = {
-    V2_START:      ["V2 started",          "#4ade80"],
-    V2_STOP:       ["V2 stopped",          "#f87171"],
-    V3_START:      ["V3 started",          "#60a5fa"],
-    V3_STOP:       ["V3 stopped",          "#a78bfa"],
-    INVISIBLE_RUN: ["Invisible triggered", "#c084fc"],
+    V2_START:          ["V2 invisible started",  "#4ade80"],
+    V2_CHECKBOX_START: ["V2 checkbox started",   "#4ade80"],
+    V2_STOP:           ["V2 stopped",            "#f87171"],
+    V3_START:          ["V3 started",            "#60a5fa"],
+    V3_STOP:           ["V3 stopped",            "#a78bfa"],
+    INVISIBLE_RUN:     ["On-demand triggered",   "#c084fc"],
   };
 
   const r = await sendMsg({ type: action, tabId });

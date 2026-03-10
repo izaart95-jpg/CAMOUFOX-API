@@ -59,9 +59,9 @@ installBlockerViaScript();
 //   }));
 
 window.addEventListener("__arena_token_stored__", (e) => {
-  const { tabId, version } = e.detail || {};
-  chrome.runtime.sendMessage({ type: "TOKEN_STORED", tabId, version })
-    .catch(() => {}); // ignore if background is busy
+  const { tabId, version, mode, error } = e.detail || {};
+  chrome.runtime.sendMessage({ type: "TOKEN_STORED", tabId, version, mode: mode || null, error: !!error })
+    .catch(() => {});
 });
 
 // ─── Listen for messages from background ──────────────────────────────────────
