@@ -4,6 +4,7 @@ A modular browser extension architecture for harvesting reCAPTCHA v2/v3 tokens â
 
 > **Important:** This project is a *framework*. While the current implementation is tuned for `arena.ai`, the core logic, injection pipeline, and token routing are intentionally decoupled from domain-specific details. With minimal configuration changes (target URL, cookie names, endpoint paths), this architecture can be repurposed for any website implementing reCAPTCHA v2 or v3.
 
+> **Note:** V2 harvester is not standalone and is intended to be used along with rektCaptcha extension
 ---
 
 ## ğŸ”§ Architecture Overview
